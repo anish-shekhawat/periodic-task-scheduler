@@ -30,7 +30,7 @@ public:
 		// Force all threads to return from io_service::run().
 		io_service_.stop();
 
-		std::cout << "Destroying the class!\n";
+		std::cout << "\nDestroying the class!\n";
 		// Suppress all exceptions.
 		try
 		{
@@ -46,11 +46,11 @@ public:
 		boost::unique_lock< boost::mutex > lock(mutex_);
 
 		// If no threads are available, then return.
-		if (0 == available_) return;
+		//if (0 == available_) return;
 
 		// Decrement count, indicating thread is no longer available.
 		--available_;
-
+		std::cout << "\nAvailable Run: " << available_;
 		// Post a wrapped task into the queue.
 		io_service_.post(boost::bind(&ThreadPool::wrap_task, this,
 			boost::function< void() >(task)));
@@ -72,21 +72,32 @@ private:
 		// Task has finished, so increment count of available threads.
 		boost::unique_lock< boost::mutex > lock(mutex_);
 		++available_;
+		std::cout << "\nAvailable End: " << available_;
 	}
 };
 
 void work1()
 {
-	std::cout << "Task 1 running\n";
+	std::cout << "\nTask 1 running\n";
+	std::cout << "\nTask 1 Thread: " << boost::this_thread::get_id();;
 	std::this_thread::sleep_for(std::chrono::seconds(5));
-	std::cout << "Task 1 finished";
+	std::cout << "\nTask 1 finished";
 }
 
 void work2()
-{
-	std::cout << "Task 2 running\n";
+{	
+	std::cout << "\nTask 2 running: ";
+	std::cout << "\nTask 2 Thread: " << boost::this_thread::get_id();;
 	std::this_thread::sleep_for(std::chrono::seconds(1));
-	std::cout << "Task 2 finished\n";
+	std::cout << "\nTask 2 finished\n";
+}
+
+void work3()
+{
+	std::cout << "\nTask 3 running";
+	std::cout << "\nTask 3 Thread: " << boost::this_thread::get_id();;
+	std::this_thread::sleep_for(std::chrono::seconds(3));
+	std::cout << "\nTask 3 finished\n";
 }
 
 int main()
@@ -94,6 +105,7 @@ int main()
 	ThreadPool pool(2);
 	pool.run_task(work1);
 	pool.run_task(work2);
+	pool.run_task(work3);
 	std::cout << "Done\n";
 	return 0;
 }
