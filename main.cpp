@@ -3,17 +3,18 @@
 #include <iomanip>
 #include <functional>
 #include <boost\thread.hpp>
-#include <boost/asio.hpp>
-#include <boost/bind.hpp>
-#include <boost/noncopyable.hpp>
+#include <boost\asio\io_service.hpp>
+#include <boost\asio.hpp>
+#include <boost\bind.hpp>
+#include <boost\noncopyable.hpp>
+#include <boost\date_time\posix_time\posix_time.hpp>
 
 void log_text(std::string const& text)
-{	
-	std::cout << text << ": " << boost::this_thread::get_id() << "\n";
-	Sleep(100);
+{
 	auto t = std::time(nullptr);
 	auto tm = *std::localtime(&t);
-	std::cout << std::put_time(&tm, "%d-%m-%Y %H-%M-%S") << " " << text << std::endl;
+	Sleep(200);
+	std::cout << std::put_time(&tm, "%d-%m-%Y %H-%M-%S") << " " << text << " : " << boost::this_thread::get_id() << std::endl;
 }
 
 class PeriodicTask : boost::noncopyable
@@ -31,7 +32,7 @@ public:
 		, name(name)
 		, timer(ioService)
 	{
-		log_text("Create PeriodicTask '" + name + "'");
+		//log_text("Create PeriodicTask '" + name + "'");
 		// Schedule start to be ran by the io_service
 		ioService.post(boost::bind(&PeriodicTask::start, this));
 	}
@@ -44,7 +45,7 @@ public:
 			task();
 
 			timer.expires_at(timer.expires_at() + boost::posix_time::seconds(interval));
-			start_wait();
+			timer.async_wait(boost::bind(&PeriodicTask::execute, this, boost::asio::placeholders::error));
 		}
 	}
 
@@ -53,19 +54,30 @@ public:
 		log_text("Start PeriodicTask '" + name + "'");
 
 		// Uncomment if you want to call the handler on startup (i.e. at time 0)
-		// task();
+		task();
 
 		timer.expires_from_now(boost::posix_time::seconds(interval));
-		start_wait();
-	}
-
-private:
-	void start_wait()
-	{
 		timer.async_wait(boost::bind(&PeriodicTask::execute
 			, this
 			, boost::asio::placeholders::error));
 	}
+
+	std::string get_task_name()
+	{
+		return this->name;
+	}
+
+	int get_task_interval()
+	{
+		return this->interval;
+	}
+
+private:
+	/*void start_wait()
+	{
+		timer.async_wait(boost::bind(&PeriodicTask::execute
+			, this));
+	}*/
 
 private:
 	boost::asio::io_service& ioService;
@@ -80,7 +92,11 @@ class PeriodicScheduler : boost::noncopyable
 public:
 	void run()
 	{
-		io_service.run();
+		std::cout << "\n#Boost Concurrent: *" << boost::thread::hardware_concurrency() << "*#\n";
+		for (unsigned t = 0; t < 3; t++)
+		{
+			threadpool.create_thread(boost::bind(&boost::asio::io_service::run, &io_service));
+		}
 	}
 
 	void addTask(std::string const& name
@@ -91,8 +107,19 @@ public:
 			, name, interval, task));
 	}
 
+	void listTasks()
+	{
+		for (auto&& ptr : tasks)
+		{
+			std::cout << ptr->get_task_name() << std::endl;
+		}
+			
+	}
+
 private:
 	boost::asio::io_service io_service;
+	boost::thread_group threadpool;
+
 	std::vector<std::unique_ptr<PeriodicTask>> tasks;
 };
 
@@ -101,18 +128,12 @@ int main()
 	PeriodicScheduler scheduler;
 
 	scheduler.addTask("CPU", boost::bind(log_text, "* CPU USAGE"), 5);
-	scheduler.addTask("Memory1", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory2", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory3", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory4", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory5", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory6", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory7", boost::bind(log_text, "* MEMORY USAGE"), 10);
-	scheduler.addTask("Memory8", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory", boost::bind(log_text, "* MEMORY USAGE"), 10);
 
 	log_text("Start io_service");
-
 	scheduler.run();
-
+	//boost::thread bt(boost::bind(&PeriodicScheduler::run, &scheduler));
+	std::cout << "Task List: \n";
+	scheduler.listTasks();
 	return 0;
 }
