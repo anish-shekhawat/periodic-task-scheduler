@@ -1,111 +1,118 @@
-#include<iostream>
-#include<chrono>
-#include<thread>
-#include<boost\asio\io_service.hpp>
-#include<boost\thread.hpp>
+#include <ctime>
+#include <iostream>
+#include <iomanip>
+#include <functional>
+#include <boost\thread.hpp>
+#include <boost/asio.hpp>
+#include <boost/bind.hpp>
+#include <boost/noncopyable.hpp>
 
-class ThreadPool
+void log_text(std::string const& text)
+{	
+	std::cout << text << ": " << boost::this_thread::get_id() << "\n";
+	Sleep(100);
+	auto t = std::time(nullptr);
+	auto tm = *std::localtime(&t);
+	std::cout << std::put_time(&tm, "%d-%m-%Y %H-%M-%S") << " " << text << std::endl;
+}
+
+class PeriodicTask : boost::noncopyable
 {
-private:
-	boost::asio::io_service io_service_;
-	boost::asio::io_service::work work_;
-	boost::thread_group threads_;
-	std::size_t available_;
-	boost::mutex mutex_;
-
 public:
-	ThreadPool(std::size_t pool_size)
-		:work_(io_service_),
-		available_(pool_size)
+	typedef std::function<void()> handler_fn;
+
+	PeriodicTask(boost::asio::io_service& ioService
+		, std::string const& name
+		, int interval
+		, handler_fn task)
+		: ioService(ioService)
+		, interval(interval)
+		, task(task)
+		, name(name)
+		, timer(ioService)
 	{
-		for ( std::size_t i = 0; i < pool_size; ++i )
-		{
-			threads_.create_thread( boost::bind( &boost::asio::io_service::run, &io_service_ ) );
+		log_text("Create PeriodicTask '" + name + "'");
+		// Schedule start to be ran by the io_service
+		ioService.post(boost::bind(&PeriodicTask::start, this));
+	}
+
+	void execute(boost::system::error_code const& e)
+	{
+		if (e != boost::asio::error::operation_aborted) {
+			log_text("Execute PeriodicTask '" + name + "'");
+
+			task();
+
+			timer.expires_at(timer.expires_at() + boost::posix_time::seconds(interval));
+			start_wait();
 		}
 	}
 
-	/// @brief Destructor.
-	~ThreadPool()
+	void start()
 	{
-		// Force all threads to return from io_service::run().
-		io_service_.stop();
+		log_text("Start PeriodicTask '" + name + "'");
 
-		std::cout << "\nDestroying the class!\n";
-		// Suppress all exceptions.
-		try
-		{
-			threads_.join_all();
-		}
-		catch (const std::exception&) {}
-	}
+		// Uncomment if you want to call the handler on startup (i.e. at time 0)
+		// task();
 
-	/// @brief Adds a task to the thread pool if a thread is currently available.
-	template < typename Task >
-	void run_task(Task task)
-	{
-		boost::unique_lock< boost::mutex > lock(mutex_);
-
-		// If no threads are available, then return.
-		//if (0 == available_) return;
-
-		// Decrement count, indicating thread is no longer available.
-		--available_;
-		std::cout << "\nAvailable Run: " << available_;
-		// Post a wrapped task into the queue.
-		io_service_.post(boost::bind(&ThreadPool::wrap_task, this,
-			boost::function< void() >(task)));
+		timer.expires_from_now(boost::posix_time::seconds(interval));
+		start_wait();
 	}
 
 private:
-	/// @brief Wrap a task so that the available count can be increased once
-	///        the user provided task has completed.
-	void wrap_task(boost::function< void() > task)
+	void start_wait()
 	{
-		// Run the user supplied task.
-		try
-		{
-			task();
-		}
-		// Suppress all exceptions.
-		catch (const std::exception&) {}
-
-		// Task has finished, so increment count of available threads.
-		boost::unique_lock< boost::mutex > lock(mutex_);
-		++available_;
-		std::cout << "\nAvailable End: " << available_;
+		timer.async_wait(boost::bind(&PeriodicTask::execute
+			, this
+			, boost::asio::placeholders::error));
 	}
+
+private:
+	boost::asio::io_service& ioService;
+	boost::asio::deadline_timer timer;
+	handler_fn task;
+	std::string name;
+	int interval;
 };
 
-void work1()
+class PeriodicScheduler : boost::noncopyable
 {
-	std::cout << "\nTask 1 running\n";
-	std::cout << "\nTask 1 Thread: " << boost::this_thread::get_id();;
-	std::this_thread::sleep_for(std::chrono::seconds(5));
-	std::cout << "\nTask 1 finished";
-}
+public:
+	void run()
+	{
+		io_service.run();
+	}
 
-void work2()
-{	
-	std::cout << "\nTask 2 running: ";
-	std::cout << "\nTask 2 Thread: " << boost::this_thread::get_id();;
-	std::this_thread::sleep_for(std::chrono::seconds(1));
-	std::cout << "\nTask 2 finished\n";
-}
+	void addTask(std::string const& name
+		, PeriodicTask::handler_fn const& task
+		, int interval)
+	{
+		tasks.push_back(std::make_unique<PeriodicTask>(std::ref(io_service)
+			, name, interval, task));
+	}
 
-void work3()
-{
-	std::cout << "\nTask 3 running";
-	std::cout << "\nTask 3 Thread: " << boost::this_thread::get_id();;
-	std::this_thread::sleep_for(std::chrono::seconds(3));
-	std::cout << "\nTask 3 finished\n";
-}
+private:
+	boost::asio::io_service io_service;
+	std::vector<std::unique_ptr<PeriodicTask>> tasks;
+};
 
 int main()
 {
-	ThreadPool pool(2);
-	pool.run_task(work1);
-	pool.run_task(work2);
-	pool.run_task(work3);
-	std::cout << "Done\n";
+	PeriodicScheduler scheduler;
+
+	scheduler.addTask("CPU", boost::bind(log_text, "* CPU USAGE"), 5);
+	scheduler.addTask("Memory1", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory2", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory3", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory4", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory5", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory6", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory7", boost::bind(log_text, "* MEMORY USAGE"), 10);
+	scheduler.addTask("Memory8", boost::bind(log_text, "* MEMORY USAGE"), 10);
+
+	log_text("Start io_service");
+
+	scheduler.run();
+
 	return 0;
 }
