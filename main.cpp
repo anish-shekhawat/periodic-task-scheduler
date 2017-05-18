@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <unordered_set>
+#include <unordered_map>
 #include <functional>
 #include <condition_variable>
 #include <mutex>
@@ -53,7 +54,7 @@ private:
 	std::condition_variable task_queue_changed;
 	std::mutex Mutex;
 	std::unordered_set<std::uint32_t> delete_task_set;
-	std::unordered_map<std::uint32_t, std::chrono::seconds>
+	std::unordered_map<std::uint32_t, std::chrono::seconds> update_tas
 	bool executing=true;
 
 public:
@@ -150,12 +151,12 @@ public:
 		return time_c;
 	}
 
-	void delete_task(const std::uint32 &task_id)
+	void delete_task(const std::uint32_t &task_id)
 	{
 		delete_task_set.insert(task_id);
 	}
 
-	void update_task(const std::uint32 &task_id, const int &sec)
+	void update_task(const std::uint32_t &task_id, const int &sec)
 	{
 		update_task_set[task_id] = std::chrono::seconds(sec);
 	}
