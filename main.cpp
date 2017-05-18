@@ -1,5 +1,6 @@
 #include <ctime>
 #include <iostream>
+#include <iomanip>
 #include <Windows.h>
 #include <queue>
 #include <chrono>
@@ -54,7 +55,7 @@ private:
 	std::condition_variable task_queue_changed;
 	std::mutex Mutex;
 	std::unordered_set<std::uint32_t> delete_task_set;
-	std::unordered_map<std::uint32_t, std::chrono::seconds> update_tas
+	std::unordered_map<std::uint32_t, std::chrono::seconds> update_task_set;
 	bool executing=true;
 
 public:
@@ -73,12 +74,12 @@ public:
 	static int getUid()
 	{
 		static std::atomic<std::uint32_t> uid{ 0 };
-		return ++uid;
+		return uid++;
 	}
 
-	void schedule_periodic(std::string const& n, std::function<void()> f, const std::chrono::system_clock::time_point &tp, const int &s)
+	void schedule_periodic(const std::uint32_t &id, std::string const& n, std::function<void()> f, const std::chrono::system_clock::time_point &tp, const int &s)
 	{
-		Task T(getUid(), n, f, tp, std::chrono::seconds(s));
+		Task T(id, n, f, tp, std::chrono::seconds(s));
 		schedule(T);
 	}
 
@@ -101,7 +102,7 @@ public:
 				{
 					
 					task = task_queue.top();
-					std::cout << "\nTime: #" << get_time_to_print(task.time) << "# #Now: " << get_time_to_print(now);
+					std::cout << "\n" << task.name << " Time: #" << get_time_to_print(task.time) << "# #Now: " << get_time_to_print(now);
 					task_queue.pop();
 					lock.unlock();
 					if (delete_task_set.find(task.uid) == delete_task_set.end())
@@ -109,11 +110,11 @@ public:
 						auto search = update_task_set.find(task.uid);
 						if (search == update_task_set.end())
 						{
-							schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + task.interval, task.interval.count());	
+							schedule_periodic(task.uid, task.name, task.func, std::chrono::system_clock::now() + task.interval, task.interval.count());	
 						}
 						else 
 						{
-							schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + search->second, search->second.count());
+							schedule_periodic(task.uid, task.name, task.func, std::chrono::system_clock::now() + search->second, search->second.count());
 							std::unique_lock<std::mutex> lock(Mutex);
 							update_task_set.erase(search);
 
@@ -135,10 +136,12 @@ public:
 
 	void get_tasks_overview()
 	{
+		std::unique_lock<std::mutex> lock(Mutex);
 		std::priority_queue<Task, std::deque<Task>, TimeComparator> temp = task_queue;
+		lock.unlock();
 		while (!temp.empty()) {
-				
-			std::cout << temp.top().name << " : " << temp.top().interval.count() << " : " << get_time_to_print(temp.top().time) << std::endl;
+			std::cout << std::setw(5) << "UID" << std::setw(20) << "Task Name" << std::setw(9) << "Interval";
+			std::cout << temp.top().name << " : " << temp.top().uid << " : " << temp.top().interval.count() << " : " << get_time_to_print(temp.top().time) << std::endl;
 			temp.pop();
 		}
 
@@ -153,6 +156,7 @@ public:
 
 	void delete_task(const std::uint32_t &task_id)
 	{
+		std::cout << "Delete Called!";
 		delete_task_set.insert(task_id);
 	}
 
@@ -181,11 +185,17 @@ void log_text(std::string const& text)
 int main()
 {
 	PeriodicScheduler scheduler;
-	scheduler.schedule_periodic("CPU", boost::bind(log_text, "* CPU USAGE"), std::chrono::system_clock::now(), 5);
-	scheduler.get_tasks_overview();
+	scheduler.schedule_periodic(scheduler.getUid(), "CPU", boost::bind(log_text, "* CPU USAGE"), std::chrono::system_clock::now(), 5);
 	boost::thread th(&PeriodicScheduler::run, &scheduler);
-	Sleep(600);
-	scheduler.schedule_periodic("Memory", boost::bind(log_text, "* Memory USAGE"), std::chrono::system_clock::now(), 10);
+	Sleep(900);
+	scheduler.schedule_periodic(scheduler.getUid(), "Memory", boost::bind(log_text, "* Memory USAGE"), std::chrono::system_clock::now(), 10);
+	Sleep(900);
+	scheduler.get_tasks_overview();
+	std::uint32_t temp;
+	int temp2;
+	std::cin >> temp;
+	std::cin >> temp2;
+	scheduler.update_task(temp, temp2);
 	th.join();
 	return 0;
 }
