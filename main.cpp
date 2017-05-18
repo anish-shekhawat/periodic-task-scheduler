@@ -53,6 +53,7 @@ private:
 	std::condition_variable task_queue_changed;
 	std::mutex Mutex;
 	std::unordered_set<std::uint32_t> delete_task_set;
+	std::unordered_map<std::uint32_t, std::chrono::seconds>
 	bool executing=true;
 
 public:
@@ -103,8 +104,19 @@ public:
 					task_queue.pop();
 					lock.unlock();
 					if (delete_task_set.find(task.uid) == delete_task_set.end())
-					{
-						schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + task.interval, task.interval.count());
+					{	
+						auto search = update_task_set.find(task.uid);
+						if (search == update_task_set.end())
+						{
+							schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + task.interval, task.interval.count());	
+						}
+						else 
+						{
+							schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + search->second, search->second.count());
+							std::unique_lock<std::mutex> lock(Mutex);
+							update_task_set.erase(search);
+
+						}
 						task.func();
 					}
 					else
@@ -138,9 +150,14 @@ public:
 		return time_c;
 	}
 
-	void delete_task(std::uint32 task_id)
+	void delete_task(const std::uint32 &task_id)
 	{
 		delete_task_set.insert(task_id);
+	}
+
+	void update_task(const std::uint32 &task_id, const int &sec)
+	{
+		update_task_set[task_id] = std::chrono::seconds(sec);
 	}
 
 	void run()
