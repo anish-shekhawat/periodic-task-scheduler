@@ -56,7 +56,7 @@ private:
 	std::mutex Mutex;
 	std::unordered_set<std::uint32_t> delete_task_set;
 	std::unordered_map<std::uint32_t, std::chrono::seconds> update_task_set;
-	bool executing=true;
+	bool executing = TRUE;
 
 public:
 	PeriodicScheduler():num_threads(0)
@@ -74,7 +74,7 @@ public:
 	static int getUid()
 	{
 		static std::atomic<std::uint32_t> uid{ 0 };
-		return uid++;
+		return ++uid;
 	}
 
 	void schedule_periodic(const std::uint32_t &id, std::string const& n, std::function<void()> f, const std::chrono::system_clock::time_point &tp, const int &s)
@@ -93,7 +93,7 @@ public:
 				std::unique_lock<std::mutex> lock(Mutex);
 				if (task_queue.empty() && executing)
 				{
-					std::cout << "\nExecuteA";
+					//std::cout << "\nExecuteA";
 					while (task_queue.empty() && executing) {
 						task_queue_changed.wait(lock);
 					}
@@ -102,7 +102,7 @@ public:
 				{
 					
 					task = task_queue.top();
-					std::cout << "\n" << task.name << " Time: #" << get_time_to_print(task.time) << "# #Now: " << get_time_to_print(now);
+					//std::cout << "\n" << task.name << " Time: #" << get_time_to_print(task.time) << "# #Now: " << get_time_to_print(now);
 					task_queue.pop();
 					lock.unlock();
 					if (delete_task_set.find(task.uid) == delete_task_set.end())
@@ -139,9 +139,13 @@ public:
 		std::unique_lock<std::mutex> lock(Mutex);
 		std::priority_queue<Task, std::deque<Task>, TimeComparator> temp = task_queue;
 		lock.unlock();
+		std::cout << "+------" << "+---------------------" << "+-------------+" << std::endl;
+		std::cout << "|" << std::setw(5) << "UID" << " |" << std::setw(20) << "Task Name" << " |" << std::setw(12) << "Interval" << " |" << std::endl;
+		std::cout << "+------" << "+---------------------" << "+-------------+" << std::endl;
 		while (!temp.empty()) {
-			std::cout << std::setw(5) << "UID" << std::setw(20) << "Task Name" << std::setw(9) << "Interval";
-			std::cout << temp.top().name << " : " << temp.top().uid << " : " << temp.top().interval.count() << " : " << get_time_to_print(temp.top().time) << std::endl;
+			std::cout << "|" << std::setw(5) << temp.top().uid << " |" << std::setw(20) << temp.top().name << " |" << std::setw(12) << temp.top().interval.count() << " |" << std::endl;
+			std::cout << "+------" << "+---------------------" << "+-------------+" << std::endl;
+			//std::cout << temp.top().name << " : " << temp.top().uid << " : " << temp.top().interval.count() << " : " << get_time_to_print(temp.top().time) << std::endl;
 			temp.pop();
 		}
 
@@ -156,7 +160,7 @@ public:
 
 	void delete_task(const std::uint32_t &task_id)
 	{
-		std::cout << "Delete Called!";
+		//std::cout << "Delete Called!";
 		delete_task_set.insert(task_id);
 	}
 
@@ -173,6 +177,11 @@ public:
 
 		microThreads.join_all();
 	}
+
+	void stop()
+	{
+		executing = FALSE;
+	}
 };
 
 void log_text(std::string const& text)
@@ -186,16 +195,96 @@ int main()
 {
 	PeriodicScheduler scheduler;
 	scheduler.schedule_periodic(scheduler.getUid(), "CPU", boost::bind(log_text, "* CPU USAGE"), std::chrono::system_clock::now(), 5);
-	boost::thread th(&PeriodicScheduler::run, &scheduler);
-	Sleep(900);
 	scheduler.schedule_periodic(scheduler.getUid(), "Memory", boost::bind(log_text, "* Memory USAGE"), std::chrono::system_clock::now(), 10);
-	Sleep(900);
-	scheduler.get_tasks_overview();
-	std::uint32_t temp;
-	int temp2;
-	std::cin >> temp;
-	std::cin >> temp2;
-	scheduler.update_task(temp, temp2);
-	th.join();
+	boost::thread th(&PeriodicScheduler::run, &scheduler);
+	
+	std::uint32_t taskid;
+	int interval = 5;
+	// user's entered option will be saved in this variable
+	int option; 
+	//do-while loop starts here.that display menu again and again until user select to exit program
+	do
+	{
+		//Displaying Options for the menu
+		std::cout << "1) Display Task List " << std::endl;
+		std::cout << "2) Add new Task " << std::endl;
+		std::cout << "3) Update Task Interval " << std::endl;
+		std::cout << "4) Delete Task" << std::endl;
+		std::cout << "5) Exit Program " << std::endl;
+		//Prompting user to enter an option according to menu
+		std::cout << "Please select an option : ";
+		std::cin >> option;  // taking option value as input and saving in variable "option"
+
+		switch (option)
+		{
+		case 1:
+			scheduler.get_tasks_overview();
+			break;
+
+		case 2:
+			int task_option;
+			std::cout << "Enter Task interval ";
+			std::cin >> interval;
+			std::cout << "Enter Task type to schedule: " << std::endl;
+			std::cout << "1) CPU " << std::endl;
+			std::cout << "2) Memory " << std::endl;
+			std::cout << "Please select an option : ";
+			std::cin >> task_option;
+			if (task_option == 1)
+			{
+				try {
+					scheduler.schedule_periodic(scheduler.getUid(),
+						"CPU2",
+						boost::bind(log_text, "* CPU USAGE"),
+						std::chrono::system_clock::now(), interval);
+				}
+				catch (std::exception const &e){
+					std::cout << e.what() << std::endl;
+				}
+			}
+			else if (task_option == 2)
+			{
+				try {
+					scheduler.schedule_periodic(scheduler.getUid(),
+						"Memory2",
+						boost::bind(log_text, "* Memory USAGE"),
+						std::chrono::system_clock::now(), interval);
+				}
+				catch (std::exception const &e)
+				{
+					std::cout << e.what() << std::endl;
+				}
+				
+			}
+			else
+			{
+				std::cout << "Wrong Input!";
+			}
+			break;
+
+		case 3:
+			scheduler.get_tasks_overview();
+			std::cout << "Enter Task UID and new Interval separated by spaces to update ";
+			std::cin >> taskid >> interval;
+			scheduler.update_task(taskid, interval);
+			break;
+
+		case 4:
+			std::uint32_t taskid;
+			scheduler.get_tasks_overview();
+			std::cout << "Enter Task UID to delete ";
+			std::cin >> taskid;
+			scheduler.delete_task(taskid);
+			break;
+
+		case 5:
+			scheduler.stop();
+			break;
+
+		default:
+			std::cout << "Incorrect option entered!" << std::endl;
+		}
+	}
+	while (option != 5);
 	return 0;
 }
