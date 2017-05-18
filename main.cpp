@@ -15,6 +15,9 @@
 #include <boost\thread.hpp>
 #include <boost\bind.hpp>
 #include <Psapi.h>
+#include <sqlite3.h>
+
+#define NUM_THREADS 10
 
 struct Task
 {
@@ -204,8 +207,126 @@ void virtual_memory_usage()
 	std::cout << totalVirtualMem << std::endl;
 }
 
+void initialize_database(char *DBfile, sqlite3 *mainDB)
+{	
+	// Try to open taskscheduler DB
+	if (sqlite3_open_v2(DBfile, &mainDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL))
+	{
+		// Failed - Create DB
+		if (createDB(DBfile, mainDB))
+		{
+
+		}
+	}
+}
+
+int createDB(char *DBfile, sqlite3 *mainDB)
+{
+	sqlite3_stmt *stmt;
+	int rc;
+	char sql_str[1024];
+
+	rc = sqlite3_open_v2(DBfile, &mainDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
+	if (rc)
+	{
+		fprintf(stderr, "Can't create database:  %s\n", DBfile);
+		sqlite3_close(mainDB);
+		mainDB = NULL;
+		return(0);
+	}
+
+	/*CREATE TABLES*/
+
+	// Physical Memory Usage Table
+	strcpy(sql_str, "CREATE TABLE PHYSICAL_MEM (");
+	strcat(sql_str, "ID INTEGER PRIMARY KEY AUTOINCREMENT,");
+	strcat(sql_str, "Task_ID INTEGER,");
+	strcat(sql_str, "Task_Name VARCHAR(250),");
+	strcat(sql_str, "Date_Time TEXT,");
+	strcat(sql_str, "Usage REAL);");
+
+	if (SQLITE_OK != sqlite3_prepare_v2(mainDB, sql_str, -1, &stmt, 0)) {
+		fprintf(stderr, "Prepare error: %s", sqlite3_errmsg(mainDB));
+	}
+	else
+	{
+		rc = sqlite3_step(stmt);
+		if (rc != SQLITE_DONE)
+		{
+			fprintf(stderr, "Step error (%d): %s", rc, sqlite3_errmsg(mainDB));
+			return(0);
+		}
+	}
+
+	// Virtual Memory Usage Table
+	strcpy(sql_str, "CREATE TABLE VIRTUAL_MEM (");
+	strcat(sql_str, "ID INTEGER PRIMARY KEY AUTOINCREMENT,");
+	strcat(sql_str, "Task_ID INTEGER,");
+	strcat(sql_str, "Task_Name VARCHAR(250),");
+	strcat(sql_str, "Date_Time TEXT,");
+	strcat(sql_str, "Total_Mem REAL,");
+	strcat(sql_str, "Usage REAL);");
+
+	if (SQLITE_OK != sqlite3_prepare_v2(mainDB, sql_str, -1, &stmt, 0)) {
+		fprintf(stderr, "Prepare error: %s", sqlite3_errmsg(mainDB));
+	}
+	else
+	{
+		rc = sqlite3_step(stmt);
+		if (rc != SQLITE_DONE)
+		{
+			fprintf(stderr, "Step error (%d): %s", rc, sqlite3_errmsg(mainDB));
+			return(0);
+		}
+	}
+
+	// Aggregate Table
+	strcpy(sql_str, "CREATE TABLE AGGREGATE (");
+	strcat(sql_str, "ID INTEGER PRIMARY KEY AUTOINCREMENT,");
+	strcat(sql_str, "Task_Type INTEGER,");
+	strcat(sql_str, "Average REAL,");
+	strcat(sql_str, "Minimum REAL,");
+	strcat(sql_str, "Maximum REAL);");
+
+	if (SQLITE_OK != sqlite3_prepare_v2(mainDB, sql_str, -1, &stmt, 0)) {
+		fprintf(stderr, "Prepare error: %s", sqlite3_errmsg(mainDB));
+	}
+	else
+	{
+		rc = sqlite3_step(stmt);
+		if (rc != SQLITE_DONE)
+		{
+			fprintf(stderr, "Step error (%d): %s", rc, sqlite3_errmsg(mainDB));
+			return(0);
+		}
+	}
+
+	// Task Type Table to facilitate addition of more task types in future
+	strcpy(sql_str, "CREATE TABLE TASK_TYPE (");
+	strcat(sql_str, "ID INTEGER PRIMARY KEY AUTOINCREMENT,");
+	strcat(sql_str, "Task_Type VARCHAR(128));");
+
+	if (SQLITE_OK != sqlite3_prepare_v2(mainDB, sql_str, -1, &stmt, 0)) {
+		fprintf(stderr, "Prepare error: %s", sqlite3_errmsg(mainDB));
+	}
+	else
+	{
+		rc = sqlite3_step(stmt);
+		if (rc != SQLITE_DONE)
+		{
+			fprintf(stderr, "Step error (%d): %s", rc, sqlite3_errmsg(mainDB));
+			return(0);
+		}
+	}
+}
+
 int main()
 {
+	int sqlite3_config(2);
+	sqlite3 *DBPool[NUM_THREADS];
+	sqlite3 *mainDB = NULL;
+	initialize_database("taskscheduler.db", mainDB);
+
 	PeriodicScheduler scheduler;
 	scheduler.schedule_periodic(scheduler.getUid(), "VIRTUAL MEM USAGE", boost::bind(virtual_memory_usage), std::chrono::system_clock::now(), 5);
 	scheduler.schedule_periodic(scheduler.getUid(), "PHY MEM USAGE", boost::bind(physical_memory_usage), std::chrono::system_clock::now(), 10);
