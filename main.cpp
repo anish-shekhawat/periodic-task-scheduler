@@ -1,4 +1,5 @@
 #include <ctime>
+#include <stdlib.h>
 #include <iostream>
 #include <iomanip>
 #include <Windows.h>
@@ -13,6 +14,7 @@
 #include <boost/thread.hpp>
 #include <boost\thread.hpp>
 #include <boost\bind.hpp>
+#include <Psapi.h>
 
 struct Task
 {
@@ -184,18 +186,30 @@ public:
 	}
 };
 
-void log_text(std::string const& text)
+void physical_memory_usage()
 {
-	auto t = std::time(nullptr);
-	auto tm = *std::localtime(&t);
-	std::cout << std::put_time(&tm, "%d-%m-%Y %H-%M-%S") << " " << text << " : " << boost::this_thread::get_id() << std::endl;
+	PROCESS_MEMORY_COUNTERS_EX pmc_ex;
+	GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc_ex, sizeof(pmc_ex));
+	std::size_t physical_mem_usage = pmc_ex.PrivateUsage;
+	printf("%zu\n", physical_memory_usage);
+}
+
+void virtual_memory_usage()
+{
+	MEMORYSTATUSEX memInfo;
+	memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+	GlobalMemoryStatusEx(&memInfo);
+	DWORDLONG totalVirtualMem = memInfo.ullTotalPageFile;
+	DWORDLONG virtualMemUsed = memInfo.ullTotalPageFile - memInfo.ullAvailPageFile;
+	std::cout << totalVirtualMem << std::endl;
 }
 
 int main()
 {
 	PeriodicScheduler scheduler;
-	scheduler.schedule_periodic(scheduler.getUid(), "CPU", boost::bind(log_text, "* CPU USAGE"), std::chrono::system_clock::now(), 5);
-	scheduler.schedule_periodic(scheduler.getUid(), "Memory", boost::bind(log_text, "* Memory USAGE"), std::chrono::system_clock::now(), 10);
+	scheduler.schedule_periodic(scheduler.getUid(), "VIRTUAL MEM USAGE", boost::bind(virtual_memory_usage), std::chrono::system_clock::now(), 5);
+	scheduler.schedule_periodic(scheduler.getUid(), "PHY MEM USAGE", boost::bind(physical_memory_usage), std::chrono::system_clock::now(), 10);
+	
 	boost::thread th(&PeriodicScheduler::run, &scheduler);
 	
 	std::uint32_t taskid;
@@ -213,7 +227,7 @@ int main()
 		std::cout << "5) Exit Program " << std::endl;
 		//Prompting user to enter an option according to menu
 		std::cout << "Please select an option : ";
-		std::cin >> option;  // taking option value as input and saving in variable "option"
+		std::cin >> option;  
 
 		switch (option)
 		{
@@ -226,8 +240,8 @@ int main()
 			std::cout << "Enter Task interval ";
 			std::cin >> interval;
 			std::cout << "Enter Task type to schedule: " << std::endl;
-			std::cout << "1) CPU " << std::endl;
-			std::cout << "2) Memory " << std::endl;
+			std::cout << "1) Physical Memory Usage " << std::endl;
+			std::cout << "2) Virtual Memory Usage " << std::endl;
 			std::cout << "Please select an option : ";
 			std::cin >> task_option;
 			if (task_option == 1)
@@ -235,7 +249,7 @@ int main()
 				try {
 					scheduler.schedule_periodic(scheduler.getUid(),
 						"CPU2",
-						boost::bind(log_text, "* CPU USAGE"),
+						boost::bind(physical_memory_usage),
 						std::chrono::system_clock::now(), interval);
 				}
 				catch (std::exception const &e){
@@ -247,7 +261,7 @@ int main()
 				try {
 					scheduler.schedule_periodic(scheduler.getUid(),
 						"Memory2",
-						boost::bind(log_text, "* Memory USAGE"),
+						boost::bind(virtual_memory_usage),
 						std::chrono::system_clock::now(), interval);
 				}
 				catch (std::exception const &e)
