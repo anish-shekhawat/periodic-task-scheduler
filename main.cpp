@@ -4,9 +4,11 @@
 #include <queue>
 #include <chrono>
 #include <cstdlib>
+#include <unordered_set>
 #include <functional>
 #include <condition_variable>
 #include <mutex>
+#include <boost/thread.hpp>
 #include <boost\thread.hpp>
 #include <boost\bind.hpp>
 
@@ -16,12 +18,12 @@ struct Task
 	std::chrono::system_clock::time_point time;
 	std::chrono::seconds interval;
 	std::string name;
-	std::uint64_t uid;
+	std::uint32_t uid;
 
 	Task()
 	{}
 
-	Task(const std::uint64_t id, std::string const& n, std::function<void()> f, const std::chrono::system_clock::time_point tp, const std::chrono::seconds s)
+	Task(const std::uint32_t id, std::string const& n, std::function<void()> f, const std::chrono::system_clock::time_point tp, const std::chrono::seconds s)
 		:name(n),
 		 func(f),
 		 interval(s),
@@ -50,6 +52,7 @@ private:
 	std::priority_queue<Task, std::deque<Task>, TimeComparator> task_queue;
 	std::condition_variable task_queue_changed;
 	std::mutex Mutex;
+	std::unordered_set<std::uint32_t> delete_task_set;
 	bool executing=true;
 
 public:
@@ -67,7 +70,7 @@ public:
 
 	static int getUid()
 	{
-		static std::atomic<std::uint64_t> uid{ 0 };
+		static std::atomic<std::uint32_t> uid{ 0 };
 		return ++uid;
 	}
 
@@ -99,13 +102,22 @@ public:
 					std::cout << "\nTime: #" << get_time_to_print(task.time) << "# #Now: " << get_time_to_print(now);
 					task_queue.pop();
 					lock.unlock();
-					schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + task.interval, task.interval.count());
-					task.func();
+					if (delete_task_set.find(task.uid) == delete_task_set.end())
+					{
+						schedule_periodic(task.name, task.func, std::chrono::system_clock::now() + task.interval, task.interval.count());
+						task.func();
+					}
+					else
+					{
+						std::unique_lock<std::mutex> lock(Mutex);
+						delete_task_set.erase(task.uid);
+					}
 					
 				}
 			}
 			
 		}
+		return;
 	}
 
 	void get_tasks_overview()
@@ -126,9 +138,9 @@ public:
 		return time_c;
 	}
 
-	void delete_task(int n)
+	void delete_task(std::uint32 task_id)
 	{
-
+		delete_task_set.insert(task_id);
 	}
 
 	void run()
